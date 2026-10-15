@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Engineer Notes</title>
+<style>
+:root{--red:#c8102e;--navy:#0b2545;--bg:#f2f4f8;--card:#fff;--line:#d9dee7}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:#1b2330}
+header{background:var(--navy);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5}
+header h1{margin:0;font-size:20px;cursor:pointer}
+header small{opacity:.7;flex:1}
+button,select,input,textarea{font:inherit}
+.btn{background:var(--red);color:#fff;border:0;border-radius:8px;padding:10px 16px;cursor:pointer;font-weight:600}
+.btn.alt{background:#fff;color:var(--navy);border:1px solid var(--line)}
+.btn:disabled{opacity:.5}
+#banner{background:#fff3cd;color:#664d03;padding:10px 16px;font-size:14px}
+#banner.err{background:#f8d7da;color:#58151c}
+main{max-width:900px;margin:0 auto;padding:16px}
+h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:#5b6677;margin:22px 0 8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.area{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--navy);border-radius:10px;padding:14px;text-align:left;cursor:pointer;min-height:72px}
+.area.hasopen{border-left-color:var(--red)}
+.area b{display:block;margin-bottom:6px}
+.pill{display:inline-block;font-size:12px;border-radius:99px;padding:2px 8px;background:#e7ebf2;margin-right:4px}
+.pill.open{background:var(--red);color:#fff}
+.pill.prog{background:#f0ad00;color:#000}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px}
+input[type=text],select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+textarea{min-height:110px;resize:vertical}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:140px}
+.thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.thumbs img{height:90px;border-radius:8px;border:1px solid var(--line);cursor:pointer}
+.thumbs .x{position:relative}
+.thumbs .x button{position:absolute;top:2px;right:2px;border:0;background:#000a;color:#fff;border-radius:50%;width:24px;height:24px}
+.note .meta{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;color:#5b6677;margin-bottom:6px}
+.note .txt{white-space:pre-wrap;word-wrap:break-word}
+.note .acts{display:flex;gap:8px;align-items:center;margin-top:10px}
+.note .acts select{width:auto}
+.del{background:none;border:0;color:#a00;cursor:pointer;margin-left:auto}
+#lb{position:fixed;inset:0;background:#000d;display:none;align-items:center;justify-content:center;z-index:20}
+#lb img{max-width:96vw;max-height:94vh}
+.empty{color:#667;text-align:center;padding:24px}
+</style>
+</head>
+<body>
+<header>
+  <h1 onclick="location.hash=''">Engineer Notes</h1>
+  <small>Butlins Skegness</small>
+  <button class="btn alt" id="refresh">↻</button>
+</header>
+<div id="banner" hidden></div>
+<main id="app"></main>
+<div id="lb" onclick="this.style.display='none'"><img id="lbimg" alt=""></div>
+
+<script>
+/* ===== SETTINGS ===== */
+// Paste your Google Apps Script web app URL between the quotes (see setup steps).
+const API_URL = '';
+
+// Edit this list to match your site: add, remove or rename areas freely.
+const AREAS = [
+  {g:'Entertainment', n:['Skyline Pavilion','Centre Stage','Splash Waterworld','Outdoor Pool','Fairground','Arcade / FEC Building','Green Baize','Bowling / Activities']},
+  {g:'Food & Drink', n:['Burger King','Costa Coffee','Restaurants','Bars','Supermarket / Shops']},
+  {g:'Accommodation', n:['Ocean Hotel','Shoreline Hotel','The Keys','Villages','Apartments','Caravans / Chalets']},
+  {g:'Site & Plant', n:['Boiler / Plant Rooms','Main Gate & Roads','Car Parks','Outdoor Grounds','Workshops & Stores','Other / General']}
+];
+const STATUSES = ['Open','In progress','Resolved'];
+/* ==================== */
+
+const $ = s => document.querySelector(s);
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = ts => { const d=new Date(ts); return d.toLocaleDateString('en-GB')+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); };
+const ALL = AREAS.flatMap(g=>g.n.map(n=>({id:slug(n),name:n,group:g.g})));
+let notes = [], pending = [];
+
+function pass(){ let p=localStorage.getItem('en_pass'); return p||''; }
+function banner(msg,err){ const b=$('#banner'); if(!msg){b.hidden=true;return;} b.hidden=false; b.className=err?'err':''; b.textContent=msg; }
+
+/* ---------- data layer ---------- */
+async function load(){
+  if(!API_URL) return JSON.parse(localStorage.getItem('en_notes')||'[]');
+  const r = await fetch(API_URL+'?pass='+encodeURIComponent(pass()));
+  const j = await r.json();
+  if(j.error){
+    if(/passcode/i.test(j.error)){ const p=prompt('Enter the team passcode:'); if(p){localStorage.setItem('en_pass',p); return load();} }
+    throw new Error(j.error);
+  }
+  return j.notes;
+}
+async function api(body){
+  if(!API_URL){
+    let l=JSON.parse(localStorage.getItem('en_notes')||'[]');
+    if(body.action==='add') l.push({id:crypto.randomUUID(),ts:Date.now(),area:body.area,engineer:body.engineer,status:body.status,note:body.note,images:body.images});
+    if(body.action==='status') l.forEach(n=>{if(n.id===body.id)n.status=body.status});
+    if(body.action==='delete') l=l.filter(n=>n.id!==body.id);
+    localStorage.setItem('en_notes',JSON.stringify(l)); return {ok:true};
+  }
+  const r = await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...body,pass:pass()})});
+  const j = await r.json(); if(j.error) throw new Error(j.error); return j;
+}
+async function refresh(){
+  try{ notes = await load(); banner(API_URL?'':'Local mode: notes are only saved on THIS device. Set up the shared backend so everyone can see them.'); }
+  catch(e){ banner('Could not load notes: '+e.message,true); }
+  route(true);
+}
+
+/* ---------- views ---------- */
+function route(keepForm){
+  const m = location.hash.match(/^#\/area\/(.+)$/);
+  if(m){ const a=ALL.find(x=>x.id===m[1]); if(a) return areaView(a,keepForm); }
+  homeView();
+}
+function homeView(){
+  let h='';
+  AREAS.forEach(g=>{
+    h+=`<h2>${esc(g.g)}</h2><div class="grid">`;
+    g.n.forEach(n=>{
+      const id=slug(n), l=notes.filter(x=>x.area===id);
+      const o=l.filter(x=>x.status==='Open').length, p=l.filter(x=>x.status==='In progress').length;
+      h+=`<button class="area ${o?'hasopen':''}" onclick="location.hash='#/area/${id}'"><b>${esc(n)}</b>
+        ${o?`<span class="pill open">${o} open</span>`:''}${p?`<span class="pill prog">${p} in progress</span>`:''}
+        <span class="pill">${l.length} note${l.length==1?'':'s'}</span></button>`;
+    });
+    h+='</div>';
+  });
+  $('#app').innerHTML=h;
+}
+function areaView(a,keepForm){
+  if(!keepForm || !$('#form')){
+    pending=[];
+    $('#app').innerHTML=`
+    <button class="btn alt" onclick="location.hash=''">← All areas</button>
+    <h2 style="font-size:20px;text-transform:none;color:#1b2330;letter-spacing:0">${esc(a.name)} <small style="color:#667;font-weight:400">· ${esc(a.group)}</small></h2>
+    <div class="card" id="form">
+      <div class="row">
+        <div><label>Your name</label><input type="text" id="who" placeholder="e.g. Aaran"></div>
+        <div><label>Status</label><select id="stat">${STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></div>
+      </div>
+      <label>Notes</label><textarea id="txt" placeholder="What's the issue / what has been done / what's needed?"></textarea>
+      <label>Photos</label>
+      <input type="file" id="pics" accept="image/*" multiple>
+      <div class="thumbs" id="prev"></div>
+      <p style="font-size:13px;color:#667;margin:10px 0 0">Date and time are added automatically when you save.</p>
+      <button class="btn" id="save" style="margin-top:10px">Save note</button>
+    </div>
+    <h2>Previous notes</h2><div id="list"></div>`;
+    $('#who').value=localStorage.getItem('en_name')||'';
+    $('#pics').onchange=async e=>{
+      for(const f of e.target.files){ if(pending.length<6) pending.push(await shrink(f)); }
+      e.target.value=''; drawPrev();
+    };
+    $('#save').onclick=()=>save(a);
+  }
+  drawList(a);
+}
+function drawPrev(){
+  $('#prev').innerHTML=pending.map((u,i)=>`<div class="x"><img src="${u}" onclick="zoom(this.src)"><button onclick="pending.splice(${i},1);drawPrev()">×</button></div>`).join('');
+}
+function drawList(a){
+  const l=notes.filter(n=>n.area===a.id).sort((x,y)=>y.ts-x.ts);
+  $('#list').innerHTML = l.length ? l.map(n=>`
+    <div class="card note">
+      <div class="meta"><span><b>${esc(n.engineer||'Unknown')}</b> · ${fmt(n.ts)}</span><span class="pill ${n.status==='Open'?'open':n.status==='In progress'?'prog':''}">${esc(n.status)}</span></div>
+      <div class="txt">${esc(n.note)}</div>
+      ${(n.images&&n.images.length)?`<div class="thumbs">${n.images.map(u=>`<img src="${esc(u)}" onclick="zoom(this.src)" loading="lazy">`).join('')}</div>`:''}
+      <div class="acts">
+        <select onchange="setStatus('${n.id}',this.value)">${STATUSES.map(s=>`<option ${s===n.status?'selected':''}>${s}</option>`).join('')}</select>
+        <button class="del" onclick="del('${n.id}')">Delete</button>
+      </div>
+    </div>`).join('') : '<div class="empty">No notes for this area yet.</div>';
+}
+
+/* ---------- actions ---------- */
+function shrink(file){
+  return new Promise((res,rej)=>{
+    const img=new Image(), u=URL.createObjectURL(file);
+    img.onload=()=>{
+      const sc=Math.min(1,1000/Math.max(img.width,img.height)), c=document.createElement('canvas');
+      c.width=img.width*sc; c.height=img.height*sc;
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      URL.revokeObjectURL(u); res(c.toDataURL('image/jpeg',.72));
+    };
+    img.onerror=rej; img.src=u;
+  });
+}
+async function save(a){
+  const who=$('#who').value.trim(), txt=$('#txt').value.trim();
+  if(!who) return alert('Please enter your name.');
+  if(!txt && !pending.length) return alert('Add a note or a photo first.');
+  localStorage.setItem('en_name',who);
+  const b=$('#save'); b.disabled=true; b.textContent='Saving…';
+  try{
+    await api({action:'add',area:a.id,engineer:who,status:$('#stat').value,note:txt,images:pending});
+    pending=[]; $('#txt').value=''; drawPrev();
+    notes=await load(); drawList(a);
+  }catch(e){ alert('Save failed: '+e.message); }
+  b.disabled=false; b.textContent='Save note';
+}
+async function setStatus(id,s){
+  try{ await api({action:'status',id,status:s}); notes=await load(); route(true); }catch(e){alert(e.message);}
+}
+async function del(id){
+  if(!confirm('Delete this note for everyone?')) return;
+  try{ await api({action:'delete',id}); notes=await load(); route(true); }catch(e){alert(e.message);}
+}
+function zoom(src){ $('#lbimg').src=src; $('#lb').style.display='flex'; }
+
+$('#refresh').onclick=refresh;
+window.addEventListener('hashchange',()=>route(false));
+setInterval(()=>{ if(document.visibilityState==='visible' && !document.activeElement.matches('textarea,input')) refresh(); },60000);
+refresh();
+</script>
+</body>
+</html>
