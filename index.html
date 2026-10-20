@@ -28,11 +28,14 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:#5b6677;ma
 .pill{display:inline-block;font-size:12px;border-radius:99px;padding:2px 8px;background:#e7ebf2;margin-right:4px}
 .pill.open{background:var(--red);color:#fff}
 .pill.prog{background:#f0ad00;color:#000}
+.pill.el{background:#ffe08a;color:#000}
+.pill.hv{background:#9fd8ff;color:#000}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
 label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px}
 input[type=text],select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff}
 select#loc{border:2px solid var(--accent);font-weight:600}
 .locbox{background:#f4fbf8;border:1px solid var(--accent);border-radius:10px;padding:4px 12px 12px;margin-bottom:6px}
+.hint{font-size:12px;color:#5b6677;margin-top:6px}
 textarea{min-height:110px;resize:vertical}
 .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:140px}
 .thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
@@ -41,7 +44,8 @@ textarea{min-height:110px;resize:vertical}
 .thumbs .x button{position:absolute;top:2px;right:2px;border:0;background:#000a;color:#fff;border-radius:50%;width:24px;height:24px}
 .note .meta{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;color:#5b6677;margin-bottom:6px}
 .note .txt{white-space:pre-wrap;word-wrap:break-word}
-.note .acts{display:flex;gap:8px;align-items:center;margin-top:10px}
+.note .sent{font-size:13px;color:#5b6677;margin-top:8px}
+.note .acts{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
 .note .acts select{width:auto}
 .del{background:none;border:0;color:#a00;cursor:pointer;margin-left:auto}
 #lb{position:fixed;inset:0;background:#000d;display:none;align-items:center;justify-content:center;z-index:20}
@@ -63,6 +67,10 @@ textarea{min-height:110px;resize:vertical}
 /* ===== SETTINGS ===== */
 // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL BETWEEN THE QUOTES:
 const API_URL = 'https://script.google.com/macros/s/AKfycbyhhMtVDAV9j_4xnV2rRTDxw8fhtl4WbpRb66ERAyPhoVkzJQYfnJyJ15MU3F0ZgMo/exec';
+
+// Names only (email addresses are kept safely in the Apps Script).
+const USERS = ['Len Allen',"Aaran O'Donnell",'Rik Wolstenholme','Daniel Wynn','Ken McDowell','Billy Gibbs','Ben Mills'];
+const TRADES = ['Electrical','HVAC'];
 
 // Areas in this section get a "Location" list box; the note is saved to the chosen location too.
 const COPY_GROUP = 'Substations / Plantrooms';
@@ -101,7 +109,9 @@ const ALL = AREAS.flatMap(g=>[
 ]);
 const PARENTS = AREAS.flatMap(g=>g.n.filter(x=>typeof x!=='string'));
 const isPlant = x => x.group.startsWith(COPY_GROUP);
-let notes = [], pending = [];
+const userOpts = () => USERS.map(u=>`<option>${esc(u)}</option>`).join('');
+const linkFor = id => location.origin+location.pathname+'#/area/'+id;
+let notes = [], pending = [], cur = null;
 
 function pass(){ return localStorage.getItem('en_pass')||''; }
 function banner(msg,err){ const b=$('#banner'); if(!msg){b.hidden=true;return;} b.hidden=false; b.className=err?'err':''; b.textContent=msg; }
@@ -122,7 +132,7 @@ async function api(body){
     let l=JSON.parse(localStorage.getItem('en_notes')||'[]');
     if(body.action==='add'){
       [body.area].concat(body.copyAreas||[]).forEach((ar,i)=>{
-        l.push({id:crypto.randomUUID(),ts:Date.now(),area:ar,engineer:body.engineer,status:body.status,note:(i?(body.copyPrefix||''):'')+(body.note||''),images:body.images});
+        l.push({id:crypto.randomUUID(),ts:Date.now(),area:ar,engineer:body.engineer,status:body.status,trade:body.trade,sentTo:body.sendTo||'',note:(i?(body.copyPrefix||''):'')+(body.note||''),images:body.images});
       });
     }
     if(body.action==='status') l.forEach(n=>{if(n.id===body.id)n.status=body.status});
@@ -177,6 +187,7 @@ function locHTML(){
   return Object.keys(by).map(g=>`<optgroup label="${esc(g)}">${by[g].map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</optgroup>`).join('');
 }
 function areaView(a,keepForm){
+  cur=a;
   if(!keepForm || !$('#form')){
     pending=[];
     const plant=isPlant(a), par=a.parent;
@@ -187,9 +198,10 @@ function areaView(a,keepForm){
     <div class="card" id="form">
       ${plant?`<div class="locbox"><label>Location this report is for</label>
         <select id="loc"><option value="">Select location…</option><option value="none">No location (${esc(a.name)} only)</option>${locHTML()}</select>
-        <div style="font-size:12px;color:#5b6677;margin-top:6px">The note is saved here and also on the location you choose.</div></div>`:''}
+        <div class="hint">The note is saved here and also on the location you choose.</div></div>`:''}
       <div class="row">
-        <div><label>Your name</label><input type="text" id="who" placeholder="e.g. Aaran"></div>
+        <div><label>Your name</label><select id="who"><option value="">Select your name…</option>${userOpts()}</select></div>
+        <div><label>Trade</label><select id="trade"><option value="">Select…</option>${TRADES.map(t=>`<option>${t}</option>`).join('')}</select></div>
         <div><label>Status</label><select id="stat">${STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></div>
         ${par&&par.bld?`<div><label>Building</label><select id="bld"><option value="">Not specified</option><option>Building 1</option><option>Building 2</option><option>Both buildings</option></select></div>`:''}
       </div>
@@ -197,11 +209,15 @@ function areaView(a,keepForm){
       <label>Photos</label>
       <input type="file" id="pics" accept="image/*" multiple>
       <div class="thumbs" id="prev"></div>
+      <label>Send this note to (optional)</label>
+      <select id="sendto"><option value="">Don't send</option>${userOpts()}</select>
+      <div class="hint">They get an email at their CBRE address with the note, photo links and a link to this area.</div>
       <p style="font-size:13px;color:#667;margin:10px 0 0">Date and time are added automatically when you save.</p>
       <button class="btn" id="save" style="margin-top:10px">Save note</button>
     </div>
     <h2>Previous notes</h2><div id="list"></div>`;
-    $('#who').value=localStorage.getItem('en_name')||'';
+    const sv=localStorage.getItem('en_name')||'';
+    if(USERS.includes(sv)) $('#who').value=sv;
     $('#pics').onchange=async e=>{
       for(const f of e.target.files){ if(pending.length<6) pending.push(await shrink(f)); }
       e.target.value=''; drawPrev();
@@ -217,11 +233,14 @@ function drawList(a){
   const l=notes.filter(n=>n.area===a.id).sort((x,y)=>y.ts-x.ts);
   $('#list').innerHTML = l.length ? l.map(n=>`
     <div class="card note">
-      <div class="meta"><span><b>${esc(n.engineer||'Unknown')}</b> · ${fmt(n.ts)}</span><span class="pill ${n.status==='Open'?'open':n.status==='In progress'?'prog':''}">${esc(n.status)}</span></div>
+      <div class="meta"><span><b>${esc(n.engineer||'Unknown')}</b> · ${fmt(n.ts)}</span>
+        <span>${n.trade?`<span class="pill ${n.trade==='HVAC'?'hv':'el'}">${esc(n.trade)}</span>`:''}<span class="pill ${n.status==='Open'?'open':n.status==='In progress'?'prog':''}">${esc(n.status)}</span></span></div>
       <div class="txt">${esc(n.note)}</div>
       ${(n.images&&n.images.length)?`<div class="thumbs">${n.images.map(u=>`<img src="${esc(u)}" onclick="zoom(this.src)" loading="lazy">`).join('')}</div>`:''}
+      ${n.sentTo?`<div class="sent">✉ Sent to ${esc(n.sentTo)}</div>`:''}
       <div class="acts">
         <select onchange="setStatus('${n.id}',this.value)">${STATUSES.map(s=>`<option ${s===n.status?'selected':''}>${s}</option>`).join('')}</select>
+        <select onchange="emailNote('${n.id}',this)"><option value="">✉ Email to…</option>${userOpts()}</select>
         <button class="del" onclick="del('${n.id}')">Delete</button>
       </div>
     </div>`).join('') : '<div class="empty">No notes for this area yet.</div>';
@@ -241,26 +260,47 @@ function shrink(file){
   });
 }
 async function save(a){
-  const who=$('#who').value.trim();
+  const who=$('#who').value, trade=$('#trade').value, sendTo=$('#sendto').value;
   let txt=$('#txt').value.trim();
   const loc=$('#loc');
   if(loc && !loc.value) return alert('Please choose a location from the list first.');
-  if(!who) return alert('Please enter your name.');
+  if(!who) return alert('Please choose your name.');
+  if(!trade) return alert('Please choose Electrical or HVAC.');
   if(!txt && !pending.length) return alert('Add a note or a photo first.');
+  if(sendTo && !API_URL) return alert('Emailing only works once the app is connected to the shared backend.');
   const bs=$('#bld');
   if(bs && bs.value) txt='['+bs.value+'] '+txt;
   localStorage.setItem('en_name',who);
   const copies = (loc && loc.value!=='none') ? [loc.value] : [];
+  const locObj = copies.length ? ALL.find(x=>x.id===copies[0]) : null;
   const b=$('#save'); b.disabled=true; b.textContent='Saving…';
   try{
-    await api({action:'add',area:a.id,engineer:who,status:$('#stat').value,note:txt,images:pending,
-      copyAreas:copies,copyPrefix:'[From '+a.name+']\n'});
+    const res = await api({action:'add',area:a.id,engineer:who,trade:trade,status:$('#stat').value,note:txt,images:pending,
+      copyAreas:copies,copyPrefix:'[From '+a.name+']\n',sendTo:sendTo,
+      areaName: locObj ? locObj.name+' (from '+a.name+')' : a.name,
+      link: linkFor(locObj ? locObj.id : a.id)});
     pending=[]; $('#txt').value=''; drawPrev();
     if(bs) bs.value='';
     if(loc) loc.value='';
+    $('#trade').value=''; $('#sendto').value='';
     notes=await load(); drawList(a);
+    if(sendTo){
+      if(res && res.mailErr) alert('Note saved, but the email could not be sent: '+res.mailErr);
+      else alert('Saved and emailed to '+sendTo+'.');
+    }
   }catch(e){ alert('Save failed: '+e.message); }
   b.disabled=false; b.textContent='Save note';
+}
+async function emailNote(id,sel){
+  const to=sel.value; if(!to) return;
+  sel.value='';
+  if(!API_URL) return alert('Emailing only works once the app is connected to the shared backend.');
+  if(!confirm('Email this note to '+to+'?')) return;
+  try{
+    await api({action:'email',id:id,sendTo:to,areaName:cur.name,link:linkFor(cur.id)});
+    notes=await load(); route(true);
+    alert('Emailed to '+to+'.');
+  }catch(e){ alert('Email failed: '+e.message); }
 }
 async function setStatus(id,s){
   try{ await api({action:'status',id,status:s}); notes=await load(); route(true); }catch(e){alert(e.message);}
@@ -273,7 +313,7 @@ function zoom(src){ $('#lbimg').src=src; $('#lb').style.display='flex'; }
 
 $('#refresh').onclick=refresh;
 window.addEventListener('hashchange',()=>route(false));
-setInterval(()=>{ if(document.visibilityState==='visible' && !document.activeElement.matches('textarea,input')) refresh(); },60000);
+setInterval(()=>{ if(document.visibilityState==='visible' && !document.activeElement.matches('textarea,input,select')) refresh(); },60000);
 refresh();
 </script>
 </body>
