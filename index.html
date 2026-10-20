@@ -267,16 +267,16 @@ function shrink(file){
     };
     img.onerror=rej; img.src=u;
   });
-}
-async function save(a){
-  const who=$('#who').value, trade=$('#trade').value, sendTo=$('#sendto').value;
+}async function save(a){
+  const who=$('#who').value, trade=$('#trade').value;
+  const sendTo=[...document.querySelectorAll('#sendto input:checked')].map(i=>i.value);
   let txt=$('#txt').value.trim();
   const loc=$('#loc');
   if(loc && !loc.value) return alert('Please choose a location from the list first.');
   if(!who) return alert('Please choose your name.');
   if(!trade) return alert('Please choose Electrical or HVAC.');
   if(!txt && !pending.length) return alert('Add a note or a photo first.');
-  if(sendTo && !API_URL) return alert('Emailing only works once the app is connected to the shared backend.');
+  if(sendTo.length && !API_URL) return alert('Emailing only works once the app is connected to the shared backend.');
   const bs=$('#bld');
   if(bs && bs.value) txt='['+bs.value+'] '+txt;
   localStorage.setItem('en_name',who);
@@ -291,24 +291,25 @@ async function save(a){
     pending=[]; $('#txt').value=''; drawPrev();
     if(bs) bs.value='';
     if(loc) loc.value='';
-    $('#trade').value=''; $('#sendto').value='';
+    $('#trade').value='';
+    document.querySelectorAll('#sendto input:checked').forEach(i=>i.checked=false);
     notes=await load(); drawList(a);
-    if(sendTo){
+    if(sendTo.length){
       if(res && res.mailErr) alert('Note saved, but the email could not be sent: '+res.mailErr);
-      else alert('Saved and emailed to '+sendTo+'.');
+      else alert('Saved and emailed to '+sendTo.join(', ')+'.');
     }
   }catch(e){ alert('Save failed: '+e.message); }
   b.disabled=false; b.textContent='Save note';
 }
-async function emailNote(id,sel){
-  const to=sel.value; if(!to) return;
-  sel.value='';
+async function emailNote(id){
+  const to=[...document.querySelectorAll('#em-'+id+' input:checked')].map(i=>i.value);
+  if(!to.length) return alert('Tick at least one person first.');
   if(!API_URL) return alert('Emailing only works once the app is connected to the shared backend.');
-  if(!confirm('Email this note to '+to+'?')) return;
+  if(!confirm('Email this note to '+to.join(', ')+'?')) return;
   try{
     await api({action:'email',id:id,sendTo:to,areaName:cur.name,link:linkFor(cur.id)});
     notes=await load(); route(true);
-    alert('Emailed to '+to+'.');
+    alert('Emailed to '+to.join(', ')+'.');
   }catch(e){ alert('Email failed: '+e.message); }
 }
 async function setStatus(id,s){
