@@ -216,7 +216,7 @@ function areaView(a,keepForm){
       <input type="file" id="pics" accept="image/*" multiple>
       <div class="thumbs" id="prev"></div>
       <label>Send this note to (optional)</label>
-      <select id="sendto"><option value="">Don't send</option>${userOpts()}</select>
+            <div id="sendto" class="picks">${USERS.map(u=>`<label><input type="checkbox" value="${esc(u)}"> ${esc(u)}</label>`).join('')}</div>
       <div class="hint">They get an email at their CBRE address with the note, photo links and a link to this area.</div>
       <p style="font-size:13px;color:#667;margin:10px 0 0">Date and time are added automatically when you save.</p>
       <button class="btn" id="save" style="margin-top:10px">Save note</button>
@@ -246,7 +246,10 @@ function drawList(a){
       ${n.sentTo?`<div class="sent">✉ Sent to ${esc(n.sentTo)}</div>`:''}
       <div class="acts">
         <select onchange="setStatus('${n.id}',this.value)">${STATUSES.map(s=>`<option ${s===n.status?'selected':''}>${s}</option>`).join('')}</select>
-        <select onchange="emailNote('${n.id}',this)"><option value="">✉ Email to…</option>${userOpts()}</select>
+                <details class="em"><summary>✉ Email to…</summary>
+          <div class="picks" id="em-${n.id}">${USERS.map(u=>`<label><input type="checkbox" value="${esc(u)}"> ${esc(u)}</label>`).join('')}</div>
+          <button class="btn" style="margin-top:8px" onclick="emailNote('${n.id}')">Send</button>
+        </details>
         <button class="del" onclick="del('${n.id}')">Delete</button>
       </div>
     </div>`).join('') : '<div class="empty">No notes for this area yet.</div>';
